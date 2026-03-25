@@ -1,0 +1,1044 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Emissions — Senseable City Lab</title>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap");
+
+      :root {
+        --black: #050508;
+        --white: #e8e8e0;
+        --dim: #888880;
+        --accent-red: #ff3322;
+        --accent-cyan: #00e5ff;
+        --mono: "Share Tech Mono", monospace;
+        --body: "Space Mono", monospace;
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        background: var(--black);
+        color: var(--white);
+        font-family: var(--body);
+        font-size: 13px;
+        line-height: 1.6;
+        overflow: hidden; /* no scroll at all */
+        cursor: crosshair;
+        width: 100vw;
+        height: 100vh;
+      }
+
+      /* ── SECTIONS — all fixed, stacked, fade in/out ───────────── */
+      .section {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.7s ease;
+        overflow: hidden;
+      }
+      .section.active {
+        opacity: 1;
+        pointer-events: all;
+      }
+
+      /* ── GLOBAL BOUNDING BOX — always on top, never fades ─────── */
+      .global-hud {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 500;
+      }
+      .global-border {
+        position: absolute;
+        top: 2rem;
+        left: 2rem;
+        right: 2rem;
+        bottom: 3.5rem;
+        border: 1.5px solid rgba(255, 255, 255, 0.5);
+      }
+      .global-corner {
+        position: absolute;
+        width: 16px;
+        height: 16px;
+        border-color: var(--white);
+        border-style: solid;
+        border-width: 0;
+        opacity: 0.8;
+      }
+      .global-corner.tl {
+        top: 2rem;
+        left: 2rem;
+        border-top-width: 2px;
+        border-left-width: 2px;
+      }
+      .global-corner.tr {
+        top: 2rem;
+        right: 2rem;
+        border-top-width: 2px;
+        border-right-width: 2px;
+      }
+      .global-corner.bl {
+        bottom: 3.5rem;
+        left: 2rem;
+        border-bottom-width: 2px;
+        border-left-width: 2px;
+      }
+      .global-corner.br {
+        bottom: 3.5rem;
+        right: 2rem;
+        border-bottom-width: 2px;
+        border-right-width: 2px;
+      }
+
+      /* ── VIDEO-BG — fills section, video preserves ratio ──────── */
+      .video-bg {
+        position: absolute;
+        top: 2rem;
+        left: 2rem;
+        right: 2rem;
+        bottom: 3.5rem;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .video-bg video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover; /* fills the box edge to edge */
+        display: block;
+      }
+
+      /* ── GRAIN OVERLAY ────────────────────────────────────────── */
+      .grain {
+        position: absolute;
+        inset: 0;
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+        opacity: 0.14;
+        pointer-events: none;
+        z-index: 5;
+      }
+
+      /* ── SCANLINE ─────────────────────────────────────────────── */
+      .scanline {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: rgba(255, 255, 255, 0.012);
+        animation: scanMove 8s linear infinite;
+        pointer-events: none;
+        z-index: 600;
+      }
+      @keyframes scanMove {
+        from {
+          top: 0;
+        }
+        to {
+          top: 100vh;
+        }
+      }
+
+      /* ── CROSSHAIR ────────────────────────────────────────────── */
+      .crosshair-h,
+      .crosshair-v {
+        position: fixed;
+        background: rgba(255, 255, 255, 0.05);
+        pointer-events: none;
+        z-index: 400;
+      }
+      .crosshair-h {
+        height: 1px;
+        left: 0;
+        right: 0;
+      }
+      .crosshair-v {
+        width: 1px;
+        top: 0;
+        bottom: 0;
+      }
+
+      /* ── NAV DOTS ─────────────────────────────────────────────── */
+      .nav-dots {
+        position: fixed;
+        bottom: 24px;
+        left: 28px;
+        z-index: 600;
+        display: flex;
+        align-items: center;
+        gap: 0; /* we handle spacing manually */
+      }
+      .nav-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        border: 1.5px solid rgba(255, 255, 255, 1);
+        cursor: pointer;
+        transition: background 0.3s;
+        position: relative;
+        pointer-events: all;
+        flex-shrink: 0;
+      }
+      .nav-dot-small {
+        width: 8px;
+        height: 8px;
+        border-width: 1px;
+      }
+      .nav-dot.active {
+        background: var(--white);
+      }
+
+      /* connector line: stretches between dot edges */
+      .nav-dot:not(:last-child)::after {
+        content: "";
+        position: absolute;
+        left: 100%;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 14px;
+        height: 1.5px;
+        background: rgba(255, 255, 255, 0.7);
+      }
+
+      /* margin = dot width + connector width, centered on the line */
+      .nav-dot + .nav-dot {
+        margin-left: 12px;
+      } /* connector width */
+      .nav-dot-small + .nav-dot,
+      .nav-dot + .nav-dot-small {
+        margin-left: 12px;
+      }
+
+      /* ── SCL LOGO ─────────────────────────────────────────────── */
+      .scl-logo {
+        position: fixed;
+        bottom: 20px;
+        right: 28px;
+        z-index: 600;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        opacity: 0.65;
+      }
+      .scl-logo span {
+        font-family: var(--mono);
+        font-size: 9px;
+        line-height: 1.35;
+        color: var(--white);
+      }
+
+      /* ── S2: CENTERED TEXT ────────────────────────────────────── */
+      .framing-text {
+        text-align: center;
+        max-width: 620px;
+        padding: 0 40px;
+        position: relative;
+        z-index: 20;
+      }
+      .framing-text p {
+        font-family: var(--mono);
+        font-size: 15px;
+        line-height: 1.9;
+        color: rgba(232, 232, 224, 0.88);
+      }
+
+      /* ── S4: INVENTORY LAYOUT ─────────────────────────────────── */
+      #s4 .cam-text {
+        position: absolute;
+        top: 80px;
+        left: 32px;
+        z-index: 20;
+        max-width: 300px;
+      }
+      #s4 .cam-text p {
+        font-family: var(--mono);
+        font-size: 13px;
+        line-height: 1.7;
+        background: rgba(0, 0, 0, 0.75);
+        padding: 12px 16px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: var(--white);
+      }
+      .inventory-panel {
+        position: absolute;
+        bottom: 60px;
+        right: 24px;
+        background: rgba(0, 0, 0, 0.7);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        padding: 16px 20px;
+        min-width: 220px;
+        z-index: 20;
+      }
+      .inv-title {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--white);
+        letter-spacing: 0.05em;
+        margin-bottom: 10px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+        padding-bottom: 8px;
+      }
+      .inv-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 3px 0;
+        font-family: var(--mono);
+        font-size: 11px;
+        color: rgba(232, 232, 224, 0.8);
+      }
+      .inv-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 1px;
+        flex-shrink: 0;
+      }
+
+      /* ── S5: ANATOMY OVERVIEW ─────────────────────────────────── */
+      #s5 .anatomy-title {
+        position: absolute;
+        top: 5rem;
+        left: 50%;
+        transform: translateX(-50%);
+        font-family: var(--mono);
+        font-size: 13px;
+        color: var(--white);
+        letter-spacing: 0.12em;
+        white-space: nowrap;
+        z-index: 20;
+      }
+      #s5 .anatomy-grid {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 1rem;
+        padding: 80px 60px 60px;
+        z-index: 20;
+      }
+      .anatomy-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1rem;
+        flex: 1;
+        max-width: 380px;
+        cursor: pointer;
+        transition: transform 0.3s;
+      }
+      .anatomy-item:hover {
+        transform: scale(1.03);
+      }
+      .anatomy-video-box {
+        width: clamp(200px, 25vw, 450px);
+        height: clamp(200px, 25vw, 450px);
+        border-radius: 50%;
+        border: 1.5px solid rgba(255, 255, 255, 0.22);
+        border: none;
+        overflow: hidden;
+        background: #060606;
+        position: relative;
+        box-shadow: 0 0 40px rgba(0, 0, 0, 0.7);
+      }
+      .anatomy-video-box video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      .anatomy-label {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--white);
+        letter-spacing: 0.1em;
+        text-align: center;
+      }
+
+      /* ── S6–8: DETAIL LAYOUT ──────────────────────────────────── */
+      .detail-section .layout {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 20;
+        padding: 80px 64px;
+      }
+      .detail-text {
+        position: absolute;
+        left: 64px;
+        top: 50%;
+        transform: translateY(-50%);
+        max-width: 320px;
+        z-index: 21;
+      }
+      .detail-subtitle {
+        font-family: var(--mono);
+        font-size: 10px;
+        color: var(--dim);
+        letter-spacing: 0.14em;
+        margin-bottom: 8px;
+      }
+      .detail-subtitle span {
+        color: var(--accent-red);
+      }
+      .detail-title {
+        font-family: var(--mono);
+        font-size: 16px;
+        color: var(--white);
+        margin-bottom: 20px;
+        line-height: 1.45;
+      }
+      .detail-body {
+        font-family: var(--body);
+        font-size: 11.5px;
+        color: rgba(232, 232, 224, 0.58);
+        line-height: 1.95;
+        font-style: italic;
+      }
+      .detail-video-wrap {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .detail-video-box {
+        width: clamp(260px, 42vw, 900px);
+        height: clamp(260px, 42vw, 900px);
+        border-radius: 50%;
+        border: 1.5px solid rgba(255, 255, 255, 0.2);
+        border: none;
+        overflow: hidden;
+        background: #060606;
+        position: relative;
+        box-shadow: 0 0 60px rgba(0, 0, 0, 0.85);
+      }
+      .detail-video-box video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+
+      /* ── S9: POLICY ───────────────────────────────────────────── */
+      #s9 .policy-content {
+        position: absolute;
+        bottom: 100px;
+        left: 56px;
+        z-index: 20;
+        max-width: 560px;
+      }
+      #s9 .policy-label {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--dim);
+        letter-spacing: 0.12em;
+        margin-bottom: 16px;
+      }
+      #s9 .policy-headline {
+        font-family: var(--mono);
+        font-size: 14px;
+        color: var(--white);
+        line-height: 1.75;
+        margin-bottom: 20px;
+      }
+      #s9 .policy-detail {
+        font-family: var(--body);
+        font-size: 11px;
+        color: rgba(232, 232, 224, 0.58);
+        line-height: 1.95;
+        font-style: italic;
+        max-width: 480px;
+      }
+      #s9 .stat-callout {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 10px;
+        margin-top: 26px;
+        padding: 12px 22px;
+        border: 1px solid rgba(0, 229, 255, 0.3);
+        background: rgba(0, 229, 255, 0.05);
+      }
+      #s9 .stat-num {
+        font-family: var(--mono);
+        font-size: 30px;
+        color: var(--accent-cyan);
+        letter-spacing: -0.02em;
+      }
+      #s9 .stat-label {
+        font-family: var(--mono);
+        font-size: 10px;
+        color: rgba(0, 229, 255, 0.7);
+        line-height: 1.5;
+      }
+
+      /* ── S10: CREDITS ─────────────────────────────────────────── */
+      #s10 .credits-content {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        padding: 72px 60px 60px;
+        z-index: 20;
+        overflow-y: auto;
+      }
+      #s10 .credits-headline {
+        font-family: var(--mono);
+        font-size: clamp(11px, 1.3vw, 16px);
+        color: rgba(232, 232, 224, 0.5);
+        letter-spacing: 0.08em;
+        text-align: center;
+        margin-bottom: 6px;
+      }
+      #s10 .credits-title {
+        font-family: var(--mono);
+        font-size: clamp(20px, 3vw, 38px);
+        color: var(--white);
+        text-align: center;
+        /* margin-bottom: 6px; */
+      }
+      #s10 .credits-sub {
+        font-family: var(--mono);
+        font-size: clamp(10px, 1.1vw, 14px);
+        color: var(--dim);
+        text-align: center;
+        margin-bottom: 48px;
+        letter-spacing: 0.06em;
+      }
+      #s10 .credits-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        width: 100%;
+        max-width: 1200px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      .credits-cell {
+        padding: 28px 32px;
+        border-right: 1px solid rgba(255, 255, 255, 0.1);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      .credits-cell:nth-child(2n) {
+        border-right: none;
+      }
+      .credits-cell:nth-last-child(-n + 2) {
+        border-bottom: none;
+      }
+      .credits-cell-title {
+        font-family: var(--mono);
+        font-size: 14px;
+        color: var(--white);
+        margin-bottom: 14px;
+        letter-spacing: 0.04em;
+      }
+      .credits-cell-body {
+        font-family: var(--body);
+        font-size: 10px;
+        color: rgba(232, 232, 224, 0.5);
+        line-height: 2;
+      }
+      .credits-cell-list {
+        font-family: var(--mono);
+        font-size: 10px;
+        color: rgba(232, 232, 224, 0.6);
+        line-height: 2.2;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="scanline"></div>
+    <div class="crosshair-h" id="ch"></div>
+    <div class="crosshair-v" id="cv"></div>
+
+    <!-- ── GLOBAL BOUNDING BOX — never fades, always visible ───── -->
+    <div class="global-hud">
+      <div class="global-border"></div>
+      <div class="global-corner tl"></div>
+      <div class="global-corner tr"></div>
+      <div class="global-corner bl"></div>
+      <div class="global-corner br"></div>
+    </div>
+
+    <!-- ── NAV DOTS ────────────────────────────────────────────── -->
+    <div class="nav-dots" id="navDots"></div>
+
+    <!-- ── SCL LOGO ───────────────────────────────────────────── -->
+    <div class="scl-logo">
+      <img
+        src="images/scl-logo.svg"
+        alt="Senseable City Lab"
+        style="height: 1.3rem"
+      />
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════
+         S1 — HERO
+         ════════════════════════════════════════════════════════════ -->
+    <section class="section" id="s1" data-index="0">
+      <div class="video-bg">
+        <video src="videos/s1-hero.mp4" autoplay muted playsinline></video>
+      </div>
+      <div class="grain"></div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════
+         S2 — EMISSIONS FRAMING
+         ════════════════════════════════════════════════════════════ -->
+    <section class="section" id="s2" data-index="1">
+      <div class="video-bg">
+        <video
+          src="videos/s2-ghost-emissions.mp4"
+          autoplay
+          muted
+          playsinline
+        ></video>
+      </div>
+      <div class="grain"></div>
+      <div class="framing-text">
+        <p>Emissions do not emerge uniformly across the city.</p>
+        <p>
+          They form at moments of interruption, acceleration, and imbalance.
+        </p>
+        <p>Understanding them requires the right lens.</p>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════
+         S3 — FOCAL LENS
+         ════════════════════════════════════════════════════════════ -->
+    <section class="section" id="s3" data-index="2">
+      <div class="video-bg">
+        <video src="videos/s3-lens.mp4" autoplay muted loop playsinline></video>
+      </div>
+      <div class="grain"></div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════
+         S4 — VEHICLE INVENTORY
+         ════════════════════════════════════════════════════════════ -->
+    <section class="section" id="s4" data-index="3">
+      <div class="video-bg">
+        <video
+          src="videos/s4-vehicle-detection.mp4"
+          autoplay
+          muted
+          loop
+          playsinline
+        ></video>
+      </div>
+      <div class="grain"></div>
+      <div class="cam-text">
+        <p>
+          Cameras are everywhere.<br />
+          Powered by AI, we can<br />
+          identify each vehicle<br />
+          model and their precise<br />
+          motion.
+        </p>
+      </div>
+      <div class="inventory-panel">
+        <div class="inv-title">Car make inventory</div>
+        <div id="inventoryList"></div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════
+         S5 — ANATOMY OVERVIEW
+         ════════════════════════════════════════════════════════════ -->
+    <section class="section" id="s5" data-index="4">
+      <div
+        style="background: #030303; position: absolute; inset: 0; z-index: 0"
+      ></div>
+      <div class="grain"></div>
+      <div class="anatomy-title">The Anatomy of Traffic</div>
+      <div class="anatomy-grid">
+        <div class="anatomy-item" onclick="goToSection(5)">
+          <div class="anatomy-video-box">
+            <video
+              src="videos/s6-fleet-density.mp4"
+              autoplay
+              muted
+              loop
+              playsinline
+            ></video>
+          </div>
+          <div class="anatomy-label">Fleet Density</div>
+        </div>
+        <div class="anatomy-item" onclick="goToSection(6)">
+          <div class="anatomy-video-box">
+            <video
+              src="videos/s7-signal-rhythm.mp4"
+              autoplay
+              muted
+              loop
+              playsinline
+            ></video>
+          </div>
+          <div class="anatomy-label">Signal Rhythm</div>
+        </div>
+        <div class="anatomy-item" onclick="goToSection(7)">
+          <div class="anatomy-video-box">
+            <video
+              src="videos/s8-accel-roughness.mp4"
+              autoplay
+              muted
+              loop
+              playsinline
+            ></video>
+          </div>
+          <div class="anatomy-label">Acceleration Roughness</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════
+         S6 — FLEET DENSITY (detail)
+         ════════════════════════════════════════════════════════════ -->
+    <section class="section detail-section" id="s6" data-index="5">
+      <div
+        style="background: #040404; position: absolute; inset: 0; z-index: 0"
+      ></div>
+      <div class="grain"></div>
+      <div class="layout">
+        <div class="detail-text">
+          <div class="detail-subtitle">
+            The Anatomy of Traffic — <span>Fleet Density</span>
+          </div>
+          <div class="detail-title">
+            Not all vehicles weigh the same inside system.
+          </div>
+          <div class="detail-body">
+            A small number of heavy-duty vehicles can dominate local emissions.
+            Who moves matters as much as how many.
+          </div>
+        </div>
+        <div class="detail-video-wrap">
+          <div class="detail-video-box">
+            <video
+              src="videos/s6-fleet-density.mp4"
+              autoplay
+              muted
+              loop
+              playsinline
+            ></video>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════
+         S7 — SIGNAL RHYTHM (detail)
+         ════════════════════════════════════════════════════════════ -->
+    <section class="section detail-section" id="s7" data-index="6">
+      <div
+        style="background: #030305; position: absolute; inset: 0; z-index: 0"
+      ></div>
+      <div class="grain"></div>
+      <div class="layout">
+        <div class="detail-text">
+          <div class="detail-subtitle">
+            The Anatomy of Traffic — <span>Signal Rhythm</span>
+          </div>
+          <div class="detail-title">
+            Congestion is not slow. It is rhythmic.
+          </div>
+          <div class="detail-body">
+            Traffic signals impose stop–start cycles that concentrate idling and
+            acceleration. These repeated interruptions generate emission spikes
+            invisible to average-speed maps.
+          </div>
+        </div>
+        <div class="detail-video-wrap">
+          <div class="detail-video-box">
+            <video
+              src="videos/s7-signal-rhythm.mp4"
+              autoplay
+              muted
+              loop
+              playsinline
+            ></video>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════
+         S8 — ACCELERATION ROUGHNESS (detail)
+         ════════════════════════════════════════════════════════════ -->
+    <section class="section detail-section" id="s8" data-index="7">
+      <div
+        style="background: #040303; position: absolute; inset: 0; z-index: 0"
+      ></div>
+      <div class="grain"></div>
+      <div class="layout">
+        <div class="detail-text">
+          <div class="detail-subtitle">
+            The Anatomy of Traffic — <span>Acceleration Roughness</span>
+          </div>
+          <div class="detail-title">
+            Acceleration is invisible in inventories, but dominant in emissions.
+          </div>
+          <div class="detail-body">
+            Emissions respond to how unevenly traffic accelerates and
+            decelerates, not to speed alone. Streets moving equally fast can
+            pollute very differently.
+          </div>
+        </div>
+        <div class="detail-video-wrap">
+          <div class="detail-video-box">
+            <video
+              src="videos/s8-accel-roughness.mp4"
+              autoplay
+              muted
+              loop
+              playsinline
+            ></video>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════
+         S9 — POLICY AS TREATMENT
+         ════════════════════════════════════════════════════════════ -->
+    <section class="section" id="s9" data-index="8">
+      <div class="video-bg">
+        <video
+          src="videos/s9-policy.mp4"
+          autoplay
+          muted
+          loop
+          playsinline
+        ></video>
+      </div>
+      <div class="grain"></div>
+      <div class="policy-content">
+        <div class="policy-label">Policy as Treatment</div>
+        <div class="policy-headline">
+          When cities can see emissions,<br />
+          policy becomes treatment.<br />
+          Diagnosis enables targeted, timely intervention.
+        </div>
+        <div class="policy-detail">
+          Congestion pricing in New York City shows how structural visibility
+          can change outcomes: emissions display strong spatiotemporal
+          variation, and congestion pricing led to a significant reduction in
+          emissions.
+        </div>
+        <div class="stat-callout">
+          <div class="stat-num">16–22%</div>
+          <div class="stat-label">reduction in emissions</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════
+         S10 — CREDITS
+         ════════════════════════════════════════════════════════════ -->
+    <section class="section" id="s10" data-index="9">
+      <div class="video-bg">
+        <video
+          src="videos/s10-credits.mp4"
+          autoplay
+          muted
+          loop
+          playsinline
+        ></video>
+      </div>
+      <div class="grain"></div>
+      <div class="credits-content">
+        <div class="credits-headline">You can't treat what you can't see.</div>
+        <div class="credits-title">AI Emissions</div>
+        <div class="credits-sub">
+          Visualizing the dynamics of urban emissions.
+        </div>
+        <div class="credits-grid">
+          <div class="credits-cell">
+            <div class="credits-cell-title">Description</div>
+            <div class="credits-cell-body">
+              Emissions AI reveals how urban traffic emissions emerge not as
+              static totals, but as dynamic patterns shaped by movement,
+              interruption, and infrastructure. By integrating traffic camera
+              data with AI-driven vehicle recognition and network-scale
+              modeling, the project captures fine-grained variations in fleet
+              composition, signal rhythms, and acceleration behavior. This
+              approach uncovers hidden emission hotspots and temporal spikes
+              that conventional models overlook. As demonstrated in Manhattan,
+              such high-resolution insight enables real-time evaluation of
+              policies—from congestion pricing to demand shifts—transforming
+              emissions from an abstract metric into a visible, actionable layer
+              of the city.
+            </div>
+          </div>
+          <div class="credits-cell">
+            <div class="credits-cell-title">Publication</div>
+            <div class="credits-cell-body">
+              Ubiquitous Data-Driven Framework for Traffic Emission Estimation
+              and Policy Evaluation
+            </div>
+            <div class="credits-cell-body">
+              Estimating vehicular emissions by applying deep learning on video
+              camera scenes
+            </div>
+          </div>
+          <div class="credits-cell">
+            <div class="credits-cell-title">Team</div>
+            <div class="credits-cell-list">
+              SCL Director: Carlo Ratti<br />
+              Principal Investigators: Paolo Santi, Fábio Duarte<br />
+              Research: Songhua Hu (lead), Tom Benson, Xuesong Zhou, An Wang,
+              Ashutosh Kumar, Yoshihide Sekimoto, Xiaosheng Zhu, Titus
+              Venverloo<br />
+              Visualization: Jingrong Zhang (lead), Martina Mazzarello
+            </div>
+          </div>
+          <div class="credits-cell">
+            <div class="credits-cell-title">Collaboration</div>
+            <div class="credits-cell-list">
+              Organization A<br />
+              Organization B<br />
+              <br />
+              <span style="color: var(--dim); font-size: 9px"
+                >accessibility</span
+              >
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <script>
+      /* ── CROSSHAIR ──────────────────────────────────────────────── */
+      document.addEventListener("mousemove", (e) => {
+        document.getElementById("ch").style.top = e.clientY + "px";
+        document.getElementById("cv").style.left = e.clientX + "px";
+      });
+
+      /* ── SECTIONS + STATE ───────────────────────────────────────── */
+      const sections = document.querySelectorAll(".section");
+      let currentSection = 0;
+      let isTransitioning = false;
+
+      /* ── GO TO SECTION (fade) ───────────────────────────────────── */
+      function goToSection(i) {
+        if (i === currentSection || isTransitioning) return;
+        isTransitioning = true;
+
+        sections[currentSection].classList.remove("active");
+        sections[i].classList.add("active");
+        currentSection = i;
+
+        document
+          .querySelectorAll(".nav-dot")
+          .forEach((d, j) => d.classList.toggle("active", j === i));
+
+        // unlock after transition completes
+        setTimeout(() => {
+          isTransitioning = false;
+        }, 750);
+      }
+
+      /* ── NAV DOTS ───────────────────────────────────────────────── */
+      const navEl = document.getElementById("navDots");
+      sections.forEach((_, i) => {
+        const d = document.createElement("div");
+        const isSmall = i >= 5 && i <= 7; // sections 6-8 (index 5,6,7)
+        d.className =
+          "nav-dot" +
+          (isSmall ? " nav-dot-small" : "") +
+          (i === 0 ? " active" : "");
+        d.onclick = () => goToSection(i);
+        navEl.appendChild(d);
+      });
+
+      /* ── INITIALIZE FIRST SECTION ───────────────────────────────── */
+      sections[0].classList.add("active");
+
+      /* ── WHEEL NAV ──────────────────────────────────────────────── */
+      let wheelCooldown = false;
+      window.addEventListener(
+        "wheel",
+        (e) => {
+          if (wheelCooldown) return;
+          wheelCooldown = true;
+          setTimeout(() => {
+            wheelCooldown = false;
+          }, 800); // match your transition duration
+
+          if (e.deltaY > 0)
+            goToSection(Math.min(currentSection + 1, sections.length - 1));
+          else goToSection(Math.max(currentSection - 1, 0));
+        },
+        { passive: true }
+      );
+
+      /* ── KEYBOARD NAV ───────────────────────────────────────────── */
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowDown" || e.key === "ArrowRight")
+          goToSection(Math.min(currentSection + 1, sections.length - 1));
+        if (e.key === "ArrowUp" || e.key === "ArrowLeft")
+          goToSection(Math.max(currentSection - 1, 0));
+      });
+
+      /* ── TOUCH NAV ──────────────────────────────────────────────── */
+      let touchStartY = 0;
+      window.addEventListener(
+        "touchstart",
+        (e) => {
+          touchStartY = e.touches[0].clientY;
+        },
+        { passive: true }
+      );
+      window.addEventListener(
+        "touchend",
+        (e) => {
+          const diff = touchStartY - e.changedTouches[0].clientY;
+          if (Math.abs(diff) > 40) {
+            if (diff > 0)
+              goToSection(Math.min(currentSection + 1, sections.length - 1));
+            else goToSection(Math.max(currentSection - 1, 0));
+          }
+        },
+        { passive: true }
+      );
+
+      /* ── VEHICLE INVENTORY LIST ─────────────────────────────────── */
+      const vehicles = [
+        { name: "combination truck", color: "#cc3322" },
+        { name: "electric car", color: "#aad400" },
+        { name: "intercity bus", color: "#ff8c00" },
+        { name: "light commercial truck", color: "#dd6600" },
+        { name: "motorcycle", color: "#22bb66" },
+        { name: "motorhome", color: "#446688" },
+        { name: "passenger car", color: "#9966cc" },
+        { name: "passenger truck", color: "#ee7722" },
+        { name: "refuse truck", color: "#cc2200" },
+        { name: "single-unit truck", color: "#cc6600" },
+        { name: "school bus", color: "#eecc00" },
+        { name: "transit bus", color: "#dd7700" },
+      ];
+      const invList = document.getElementById("inventoryList");
+      vehicles.forEach((v) => {
+        const el = document.createElement("div");
+        el.className = "inv-item";
+        el.innerHTML = `<div class="inv-dot" style="background:${v.color}"></div><span>${v.name}</span>`;
+        invList.appendChild(el);
+      });
+    </script>
+  </body>
+</html>
